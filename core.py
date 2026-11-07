@@ -134,29 +134,27 @@ def build_prompt(question: str, chunks, compare: bool = False):
     return system, user
 
 
-def ask_deepseek(api_key: str, question: str, chunks, model: str = "deepseek-chat",
-                 compare: bool = False) -> str:
+def _chat(api_key: str, system: str, user: str, model: str = "deepseek-chat",
+          temperature: float = 0.1, max_tokens: int = 1600) -> str:
     import requests
 
     if not api_key:
         raise ValueError("还没有填 DeepSeek API Key。")
 
-    system, user = build_prompt(question, chunks, compare=compare)
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "temperature": 0.1,
-        "max_tokens": 1200,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
         "stream": False,
     }
     headers = {
         "Authorization": f"Bearer {api_key.strip()}",
         "Content-Type": "application/json",
     }
-
     resp = requests.post(
         "https://api.deepseek.com/chat/completions",
         headers=headers,
@@ -165,6 +163,76 @@ def ask_deepseek(api_key: str, question: str, chunks, model: str = "deepseek-cha
     )
     if resp.status_code != 200:
         raise RuntimeError(f"API 返回 {resp.status_code}：{resp.text[:300]}")
+    return resp.json()["choices"][0]["message"]["content"].strip()
 
-    data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+
+def ask_deepseek(api_key: str, question: str, chunks, model: str = "deepseek-chat",
+                 compare: bool = False) -> str:
+    system, user = build_prompt(question, chunks, compare=compare)
+    return _chat(api_key, system, user, model=model, temperature=0.1, max_tokens=1200)
+
+
+def translate_text(api_key: str, text: str, target: str = "中文",
+                   model: str = "deepseek-chat") -> str:
+    system = (
+        "你是学术论文翻译助手。忠实翻译，不增删内容，不解释。"
+        "保留公式、代码、术语、引用编号和章节编号；专有名词首次出现时可在括号里保留英文。"
+        "只输出译文，不要加“以下是翻译”。"
+    )
+    user = f"目标语言：{target}\n\n原文：\n{text[:5000]}"
+    return _chat(api_key, system, user, model=model, temperature=0.2, max_tokens=2200)
+
+
+def write_discussion(api_key: str, topic: str, chunks, style: str = "Related Work",
+                     model: str = "deepseek-chat") -> str:
+    context = "\n\n".join(
+        f"【资料{i}】文件：{c.file}  第{c.page}页\n{c.text[:1200]}"
+        for i, c in enumerate(chunks, start=1)
+    )
+    system = (
+        "你是软件测试方向的论文写作助手。只使用给定资料，不要编造文献、数字或结论。"
+        "写 300–500 字中文论述，按主题组织，不要写成逐篇摘要。"
+        "每一个事实句末尾标 [文件名 第X页]；资料不足时明确说“资料不足”，不要补外部知识。"
+    )
+    user = (
+        f"写作类型：{style}\n主题：{topic}\n\n资料：\n{context}\n\n"
+        "请直接输出论述正文，使用 Markdown。"
+    )
+    return _chat(api_key, system, user, model=model, temperature=0.3, max_tokens=1800)
+
+
+def extract_references(pages, max_refs: int = 40):
+    """从每篇论文的 References 段落抽参考文献；抽不到就返回空。"""
+    refs = []
+    head = re.compile(r"(?i)^\s*(references|bibliography|参考文献)\s*$")
+    entry = re.compile(r"^\s*(\[\d+\]|\d+\.)\s+")
+
+    for p in pages:
+        lines = p.text.splitlines()
+        start = None
+        for i, line in enumerate(lines):
+            if head.match(line.strip()):
+                start = i + 1
+        if start is None:
+            continue
+        for line in lines[start:]:
+            line = clean_text(line)
+            if len(line) < 20:
+                continue
+            if entry.match(line) or re.match(r"^[A-Z][A-Za-z\-]+,\s", line):
+                refs.append((p.file, p.page, line))
+
+    if not refs:
+        for p in pages:
+            for line in p.text.splitlines():
+                line = clean_text(line)
+                if re.match(r"^\[\d+\]\s+", line) and len(line) >= 20:
+                    refs.append((p.file, p.page, line))
+
+    seen, out = set(), []
+    for item in refs:
+        key = item[2][:80]
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out[:max_refs]
