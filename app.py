@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 from core import (
     extract_pages, chunk_pages, search, ask_deepseek, ask_deepseek_fix,
     ask_deepseek_stream, translate_text, write_discussion, extract_references,
-    verify_answer, find_duplicate_groups, diff_versions, format_diff,
+    verify_answer, find_duplicate_groups, diff_versions, format_diff, expand_hits,
     arxiv_search, download_arxiv_pdf, render_page_png,
 )
 from graph_utils import build_citation_svg
@@ -223,8 +223,9 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
             st.warning("左侧先填 DeepSeek API Key。")
         else:
             k = max(top_k, 10) if compare else top_k
-            hits, top_score = search(question, chunks, top_k=k, mode=retrieval,
-                                     per_file=2 if compare else 0)
+            hits_raw, top_score = search(question, chunks, top_k=k, mode=retrieval,
+                                         per_file=2 if compare else 0)
+            hits = expand_hits(hits_raw, chunks) if hits_raw else []
             if not hits or top_score < 0.08:
                 st.session_state["qa_result"] = None
                 _log_qa(question, "", [], refused=True, top_score=top_score)
@@ -234,7 +235,8 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
                 )
             else:
                 st.markdown("### 回答")
-                st.caption(f"检索到 {len(hits)} 段原文，正在流式生成并逐条校验…")
+                st.caption(f"检索到 {len(hits_raw)} 段原文（已扩展为整页 {len(hits)} 段），"
+                           "正在流式生成并逐条校验…")
                 try:
                     answer = st.write_stream(
                         ask_deepseek_stream(api_key, question, hits, compare=compare)
@@ -250,7 +252,7 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
                     "answer": answer, "hits": hits, "report": report, "question": question,
                 }
                 st.session_state["qa_streamed"] = True
-                _log_qa(question, answer, hits, report=report, top_score=top_score)
+                _log_qa(question, answer, hits_raw, report=report, top_score=top_score)
 
     result = st.session_state.get("qa_result")
     if result:

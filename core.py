@@ -77,6 +77,10 @@ def token_counts(text: str):
     for w in WORD.findall(text):
         if len(w) >= 2 and w not in STOP:
             counts[w] = counts.get(w, 0) + 1
+            # 论文里的 d_model 常被抽成 dmodel；两种写法都当作同一个词
+            if "_" in w:
+                flat = w.replace("_", "")
+                counts[flat] = counts.get(flat, 0) + 1
 
     chars = [c for c in text if CJK.match(c)]
     for i in range(len(chars) - 1):
@@ -85,6 +89,31 @@ def token_counts(text: str):
             counts[bigram] = counts.get(bigram, 0) + 1
 
     return counts
+
+
+# 中文提问、英文原文时，光靠中文二字组永远匹配不上。
+# 这里做一层最小的“查询扩展”：命中中文术语就在检索词里补上英文写法。
+CN2EN = {
+    "编码器": "encoder", "解码器": "decoder", "注意力": "attention",
+    "多头": "multi-head", "头数": "heads", "几层": "layers", "层数": "layers",
+    "隐藏": "hidden", "前馈": "feed-forward", "位置编码": "positional encoding",
+    "嵌入": "embedding", "超参数": "hyperparameter", "参数": "parameters",
+    "训练": "training", "数据集": "dataset", "指标": "metric", "基线": "baseline",
+    "消融": "ablation", "实验": "experiment", "评估": "evaluation",
+    "缺陷": "defects", "变异": "mutation", "测试用例": "test cases",
+    "生成": "generation", "模型": "model", "局限": "limitations",
+    "威胁效度": "threats to validity", "未来工作": "future work",
+    "贡献": "contribution", "方法": "method", "架构": "architecture",
+    "复杂度": "complexity", "学习率": "learning rate", "显存": "memory",
+    "推理": "inference", "开源": "open source", "复现": "reproduce",
+    "参考文献": "references", "表格": "table", "图": "figure",
+}
+
+
+def expand_query(question: str) -> str:
+    """把中文术语翻成英文检索词；只影响召回，不影响回答语言。"""
+    extra = [en for cn, en in CN2EN.items() if cn in (question or "")]
+    return " ".join(dict.fromkeys(extra))
 
 
 def tokenize(text: str):
@@ -141,6 +170,26 @@ def _bm25_scores(q_tokens, chunks, k1: float = 1.5, b: float = 0.75):
     return out
 
 
+def expand_hits(hits, chunks, max_pages: int = 3):
+    """把命中的原文段扩成整页：同一页的其他段也带上。
+
+    为什么需要：按页切块后，一句话可能被切到另一块里。
+    只召回含关键词的那一块，模型就会说“资料未报告”——其实同一页写了。
+    """
+    pages = []
+    for h in hits:
+        key = (h.file, h.page)
+        if key not in pages:
+            pages.append(key)
+        if len(pages) >= max_pages:
+            break
+
+    out = []
+    for key in pages:
+        out.extend(c for c in chunks if (c.file, c.page) == key)
+    return out
+
+
 def search(question: str, chunks, top_k: int = 6, mode: str = "hybrid",
            per_file: int = 0):
     """返回 (命中的原文段, 最强的词面覆盖率)。
@@ -151,7 +200,7 @@ def search(question: str, chunks, top_k: int = 6, mode: str = "hybrid",
 
     per_file>0 时按文件轮流取样，保证“多论文对比”每篇都有原文进来。
     """
-    q_tokens = tokenize(question)
+    q_tokens = tokenize(question) | tokenize(expand_query(question))
     if not q_tokens or not chunks:
         return [], 0.0
 
