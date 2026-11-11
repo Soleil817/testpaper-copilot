@@ -1,0 +1,30 @@
+先看我！TestPaper Copilot 保命版
+
+你只需要按这 5 步走：
+
+1. 把整个文件夹解压到 D:\feima_mvp
+   （路径越简单越好，不要放在很深的文件夹里）
+
+2. 双击 install.bat
+   等 2-5 分钟，看到 Done 就好了。
+   如果报错，把黑窗口截图。
+
+3. 打开 https://platform.deepseek.com/
+   注册 -> API keys -> 创建 API key
+   复制 sk- 开头的那串，充值 10 元。
+   不要把 Key 发给别人，也不要传到 GitHub。
+
+4. 双击 run.bat
+   浏览器会自动打开 http://localhost:8501
+   如果没有自动打开，手动复制这个地址。
+
+5. 在网页左侧粘贴 API Key
+   上传 2-3 篇文字版 PDF
+   点“建立索引”
+   输入问题，点“提问”
+
+第一次可以问：
+“哪篇论文在 Defects4J 上报告了 mutation score？给出页码。”
+
+更详细的说明、19 天排期、GitHub 和部署步骤，看 README.md。
+遇到报错，截图发我，不要自己硬改。
