@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """TestPaper Copilot 保命版：PDF 读取、切块、检索、带页码回答。"""
 
 from dataclasses import dataclass
@@ -98,12 +98,12 @@ CN2EN = {
     "多头": "multi-head", "头数": "heads", "几层": "layers", "层数": "layers",
     "隐藏": "hidden", "前馈": "feed-forward", "位置编码": "positional encoding",
     "嵌入": "embedding", "超参数": "hyperparameter", "参数": "parameters",
-    "训练": "training", "数据集": "dataset", "指标": "metric", "基线": "baseline",
-    "消融": "ablation", "实验": "experiment", "评估": "evaluation",
+    "训练": "training", "数据集": "dataset", "指标": "metric evaluation coverage accuracy", "基线": "baseline comparison",
+    "消融": "ablation", "实验": "experiment", "评估": "evaluation evaluate",
     "缺陷": "defects", "变异": "mutation", "测试用例": "test cases",
     "生成": "generation", "模型": "model", "局限": "limitations",
     "威胁效度": "threats to validity", "未来工作": "future work",
-    "贡献": "contribution", "方法": "method", "架构": "architecture",
+    "贡献": "contribution", "方法": "method approach", "架构": "architecture",
     "复杂度": "complexity", "学习率": "learning rate", "显存": "memory",
     "推理": "inference", "开源": "open source", "复现": "reproduce",
     "参考文献": "references", "表格": "table", "图": "figure",
@@ -112,6 +112,10 @@ CN2EN = {
     "池化": "pooling", "激活": "activation", "优化器": "optimizer",
     "损失": "loss", "泛化": "generalization", "残差": "residual",
     "归一化": "normalization", "动量": "momentum", "批归一化": "batch normalization",
+    "问题": "problem issue challenge address", "挑战": "challenge", "结论": "conclusion results finding", "任务": "task",
+    "目标": "goal aim objective", "结果": "results findings", "效果": "performance", "质量": "quality",
+    "覆盖率": "coverage", "准确率": "accuracy", "效率": "efficiency",
+    "工具": "tool framework", "代码": "code", "评价": "evaluation evaluate", "贡献": "contribution",
 }
 
 
