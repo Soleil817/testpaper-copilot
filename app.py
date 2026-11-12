@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """查找小助手：面向软件测试论文的证据型阅读助手。"""
 
 import os
@@ -479,6 +479,7 @@ with st.sidebar:
         st.success("已清空，请重新上传论文。")
     st.divider()
     st.caption("Key 不会写进代码；不要把 Key 提交到 GitHub。")
+    st.caption("build 2026-11-12 · multi-query")
 
 # ---------------- header ----------------
 st.title("查找小助手")
