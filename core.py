@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """TestPaper Copilot 保命版：PDF 读取、切块、检索、带页码回答。"""
 
 from dataclasses import dataclass
@@ -193,6 +193,40 @@ def expand_hits(hits, chunks, max_pages: int = 3):
     for key in pages:
         out.extend(c for c in chunks if (c.file, c.page) == key)
     return out
+
+
+SPLIT = re.compile(r"以及|[和与及、；;]")
+
+
+def split_queries(question: str, min_len: int = 4):
+    """把“A 和 B 分别是什么”拆成两个子问题。
+
+    一问两件事时，整句算分会偏向其中一件，另一件的原文页召回不到；
+    拆开各查一次再合并，是长文档里最划算的修法。
+    """
+    parts = [p.strip(" ，。,.") for p in SPLIT.split(question or "")]
+    return [p for p in parts if len(p) >= min_len]
+
+
+def search_multi(question: str, chunks, top_k: int = 6, mode: str = "hybrid",
+                 per_file: int = 0):
+    """多子问题检索：拆句、分别检索、按页去重后合并。"""
+    parts = split_queries(question)
+    if len(parts) <= 1:
+        return search(question, chunks, top_k=top_k, mode=mode, per_file=per_file)
+
+    per = max(2, top_k // len(parts))
+    seen, out, top_score = set(), [], 0.0
+    for part in parts:
+        hits, score = search(part, chunks, top_k=per, mode=mode, per_file=per_file)
+        top_score = max(top_score, score)
+        for c in hits:
+            key = (c.file, c.page, c.text[:40])
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(c)
+    return out[: max(top_k, len(parts) * 2)], top_score
 
 
 def search(question: str, chunks, top_k: int = 6, mode: str = "hybrid",
