@@ -565,6 +565,19 @@ if "stats" in st.session_state:
             "当前版本不支持 OCR，演示时请换文字版 PDF。"
         )
 
+    pages_now = st.session_state.get("pages") or []
+    by_name = {}
+    for p in pages_now:
+        d = by_name.setdefault(p.file, {"文件": p.file, "页数": 0, "原文段": 0})
+        d["页数"] += 1
+    chunk_counts = {}
+    for c in st.session_state.get("chunks") or []:
+        chunk_counts[c.file] = chunk_counts.get(c.file, 0) + 1
+    for name, d in by_name.items():
+        d["原文段"] = chunk_counts.get(name, 0)
+    with st.expander(f"已入库论文（{len(by_name)} 篇）", expanded=False):
+        st.dataframe(list(by_name.values()), use_container_width=True, hide_index=True)
+
 
 def render_dedupe():
     """官方测试用例 3.1：按内容识别同一论文的不同版本，并总结差异。"""
