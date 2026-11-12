@@ -692,6 +692,7 @@ def format_diff(diff, old_name: str, new_name: str) -> str:
 ARXIV_NS = {"a": "http://www.w3.org/2005/Atom",
             "arxiv": "http://arxiv.org/schemas/atom"}
 ARXIV_ID = re.compile(r"^\d{4}\.\d{4,5}(v\d+)?$")
+_ARXIV_CACHE = {}
 GITHUB_URL = re.compile(r"https?://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 
 
@@ -729,23 +730,47 @@ def parse_arxiv_feed(xml_text: str):
     return out
 
 
-def arxiv_search(query: str, max_results: int = 5, timeout: int = 25):
+def arxiv_search(query: str, max_results: int = 5, timeout: int = 45, retries: int = 3):
     """关键词检索或按 ID 精确取；这是“Agent 调用外部 API”的最小可用实现。"""
+    import time as _time
+
     import requests
 
     q = (query or "").strip()
     if not q:
         raise ValueError("先输入关键词或 arXiv ID。")
+
+    # 同一进程内缓存 10 分钟：arXiv 对重复请求会限流（429），
+    # 演示时评委多点两次“搜索”也不至于被掐。
+    now = _time.monotonic()
+    cached = _ARXIV_CACHE.get((q.lower(), int(max_results)))
+    if cached and now - cached[0] < 600:
+        return cached[1]
+
     params = {"max_results": max(1, min(int(max_results), 20))}
     if ARXIV_ID.match(q):
         params["id_list"] = q
     else:
         params["search_query"] = f"all:{q}"
         params["sortBy"] = "relevance"
-    resp = requests.get("https://export.arxiv.org/api/query", params=params, timeout=timeout)
-    if resp.status_code != 200:
-        raise RuntimeError(f"arXiv 返回 HTTP {resp.status_code}")
-    return parse_arxiv_feed(resp.text)
+
+    last_err = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get("https://export.arxiv.org/api/query", params=params,
+                                timeout=(10, timeout))
+            if resp.status_code == 429:
+                raise RuntimeError("arXiv 限流（HTTP 429），等 30 秒再试")
+            if resp.status_code != 200:
+                raise RuntimeError(f"arXiv 返回 HTTP {resp.status_code}")
+            items = parse_arxiv_feed(resp.text)
+            _ARXIV_CACHE[(q.lower(), int(max_results))] = (now, items)
+            return items
+        except Exception as exc:  # 网络抖动常见，重试一次再报错
+            last_err = exc
+            if attempt + 1 < retries:
+                _time.sleep(6)
+    raise RuntimeError(f"arXiv 暂时无响应（已重试 {retries} 次）：{last_err}")
 
 
 def download_arxiv_pdf(pdf_url: str, timeout: int = 40) -> bytes:
