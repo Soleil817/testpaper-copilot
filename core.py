@@ -216,11 +216,21 @@ def search_multi(question: str, chunks, top_k: int = 6, mode: str = "hybrid",
         return search(question, chunks, top_k=top_k, mode=mode, per_file=per_file)
 
     per = max(2, top_k // len(parts))
-    seen, out, top_score = set(), [], 0.0
+    lists, top_score = [], 0.0
     for part in parts:
         hits, score = search(part, chunks, top_k=per, mode=mode, per_file=per_file)
         top_score = max(top_score, score)
-        for c in hits:
+        lists.append(hits)
+
+    # 交替合并：A 的第一页、B 的第一页、A 的第二页……
+    # 否则扩成整页时前几页全被第一个主题占满，第二个主题会被截掉。
+    seen, out = set(), []
+    depth = max((len(h) for h in lists), default=0)
+    for i in range(depth):
+        for hits in lists:
+            if i >= len(hits):
+                continue
+            c = hits[i]
             key = (c.file, c.page, c.text[:40])
             if key in seen:
                 continue
