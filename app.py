@@ -198,6 +198,13 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
     st.subheader("论文问答")
     st.caption("只根据上传的论文回答；每句结论都要标 [文件名 第X页]；没证据就拒答。")
 
+    files = sorted({c.file for c in chunks})
+    scope = st.selectbox(
+        "回答范围", ["全部论文"] + files, key="qa_scope",
+        help="问“这篇论文”时选具体论文，避免答案跨论文串在一起。",
+    )
+    scoped = chunks if scope == "全部论文" else [c for c in chunks if c.file == scope]
+
     with st.expander("可以问什么？点开看示例"):
         st.markdown(
             """
@@ -223,9 +230,9 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
             st.warning("左侧先填 DeepSeek API Key。")
         else:
             k = max(top_k, 10) if compare else top_k
-            hits_raw, top_score = search_multi(question, chunks, top_k=k, mode=retrieval,
+            hits_raw, top_score = search_multi(question, scoped, top_k=k, mode=retrieval,
                                          per_file=2 if compare else 0)
-            hits = expand_hits(hits_raw, chunks) if hits_raw else []
+            hits = expand_hits(hits_raw, scoped) if hits_raw else []
             if not hits or top_score < 0.05:
                 st.session_state["qa_result"] = None
                 _log_qa(question, "", [], refused=True, top_score=top_score)

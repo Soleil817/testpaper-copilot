@@ -179,7 +179,7 @@ def _bm25_scores(q_tokens, chunks, k1: float = 1.5, b: float = 0.75):
     return out
 
 
-def expand_hits(hits, chunks, max_pages: int = 3):
+def expand_hits(hits, chunks, max_pages: int = 3, max_chunks: int = 12):
     """把命中的原文段扩成整页：同一页的其他段也带上。
 
     为什么需要：按页切块后，一句话可能被切到另一块里。
@@ -195,7 +195,12 @@ def expand_hits(hits, chunks, max_pages: int = 3):
 
     out = []
     for key in pages:
-        out.extend(c for c in chunks if (c.file, c.page) == key)
+        for c in chunks:
+            if (c.file, c.page) != key:
+                continue
+            out.append(c)
+            if len(out) >= max_chunks:
+                return out
     return out
 
 
