@@ -2,7 +2,10 @@
 """TestPaper Copilot 保命版：PDF 读取、切块、检索、带页码回答。"""
 
 from dataclasses import dataclass
+import json
+import os
 import re
+import time
 
 
 @dataclass
@@ -791,6 +794,117 @@ def download_arxiv_pdf(pdf_url: str, timeout: int = 40) -> bytes:
     if resp.status_code != 200:
         raise RuntimeError(f"下载失败：HTTP {resp.status_code}")
     return resp.content
+
+
+# ---------------- arXiv 最近使用（最多 5 条） ----------------
+
+HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "arxiv_history.json")
+
+
+def load_history(limit: int = 5):
+    """读“最近使用过的 arXiv 论文”。文件不存在或损坏都返回空列表。"""
+    try:
+        with open(HISTORY_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data[:limit] if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def record_history(item, limit: int = 5):
+    """记一条使用记录：同 ID 去重、新的在前、最多 limit 条。写不进去也不报错。"""
+    if not item or not item.get("id"):
+        return load_history(limit)
+    entry = {k: item.get(k, "") for k in
+             ("id", "title", "authors", "published", "pdf_url", "github")}
+    entry["used_at"] = time.strftime("%Y-%m-%d %H:%M")
+    data = [h for h in load_history(50) if h.get("id") != entry["id"]]
+    data.insert(0, entry)
+    data = data[:limit]
+    try:
+        with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+    return data
+
+
+# ---------------- Agent 规划：从文献库自己找相关论文 ----------------
+
+STOP_EN = set(
+    "the and for with that this these those from into than then they their there "
+    "have has had are was were will would can could may might not but also such "
+    "paper papers approach method methods result results show shows propose proposed "
+    "using used use based on in of to a an by as at is are be our we it its".split()
+)
+
+
+def extract_topic_terms(chunks, limit: int = 8):
+    """从库里论文的高频英文词里抽主题词，作为检索种子。"""
+    from collections import Counter
+
+    cnt = Counter()
+    for c in chunks:
+        for w, n in token_counts(c.text).items():
+            if w.isascii() and w.isalpha() and len(w) >= 4 and w not in STOP_EN:
+                cnt[w] += n
+    return [w for w, _ in cnt.most_common(limit)]
+
+
+def _library_ids(chunks):
+    """把已入库文件名还原成 arXiv ID（2305.04764v2.pdf -> 2305.04764）。"""
+    ids = set()
+    for c in chunks:
+        name = c.file.rsplit(".", 1)[0]
+        ids.add(name.split("v")[0] if re.match(r"^\d{4}\.\d{4,5}", name) else name.lower())
+    return ids
+
+
+def rank_candidates(items, existing_ids, terms, limit: int = 5):
+    """过滤掉已在库的、按标题/摘要命中主题词的数量排序。"""
+    out = []
+    for it in items:
+        aid = it["id"].split("v")[0]
+        if aid in existing_ids:
+            continue
+        hay = (it["title"] + " " + it.get("summary", "")).lower()
+        hits = [t for t in terms if t in hay]
+        if not hits:
+            continue
+        out.append({**it, "hits": hits[:4], "score": len(hits)})
+    out.sort(key=lambda x: x["score"], reverse=True)
+    return out[:limit]
+
+
+def plan_related(chunks, max_results: int = 10, limit: int = 5):
+    """一次“自主规划”：抽主题词 → 调 arXiv → 过滤 → 排序，并返回每一步。"""
+    terms = extract_topic_terms(chunks, limit=8)
+    if not terms:
+        return {"steps": ["库里还没有可用的英文文本，先上传论文"], "items": [], "terms": []}
+
+    top = terms[:3]
+    if len(top) >= 2:
+        query = f"all:{top[0]} AND all:{top[1]}"
+    else:
+        query = f"all:{top[0]}"
+
+    steps = [
+        f"读取库内论文，统计高频术语，选出：{'、'.join(top)}",
+        f"构造检索式：{query}",
+    ]
+    try:
+        raw = arxiv_search(query, max_results=max_results)
+    except Exception as exc:
+        steps.append(f"调用 arXiv 失败：{exc}")
+        return {"steps": steps, "items": [], "terms": terms}
+
+    steps.append(f"arXiv 返回 {len(raw)} 条")
+    existing = _library_ids(chunks)
+    fresh = [r for r in raw if r["id"].split("v")[0] not in existing]
+    items = rank_candidates(raw, existing, terms, limit=limit)
+    steps.append(f"剔除已在库 {len(raw) - len(fresh)} 条、主题不相关 {max(0, len(fresh) - len(items))} 条，"
+                 f"推荐 {len(items)} 条")
+    return {"steps": steps, "items": items, "terms": terms, "query": query}
 
 
 # ---------------- 流式输出（SSE） ----------------

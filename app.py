@@ -1,7 +1,8 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """查找小助手：面向软件测试论文的证据型阅读助手。"""
 
 import os
+import base64
 import json
 import streamlit as st
 import streamlit.components.v1 as components
@@ -10,7 +11,8 @@ from core import (
     extract_pages, chunk_pages, search, ask_deepseek, ask_deepseek_fix,
     ask_deepseek_stream, translate_text, write_discussion, extract_references,
     verify_answer, find_duplicate_groups, diff_versions, format_diff, expand_hits,
-    arxiv_search, download_arxiv_pdf, render_page_png, search_multi,
+    arxiv_search, download_arxiv_pdf, render_page_png, search_multi, plan_related,
+    load_history, record_history,
 )
 from graph_utils import build_citation_svg
 
@@ -96,6 +98,28 @@ def add_to_library(new_pages, file_name=None, pdf_bytes=None):
     st.session_state["dup_groups"] = find_duplicate_groups(by_file)
 
 
+def _add_arxiv_item(r, key_prefix="arxiv"):
+    """下载一条 arXiv 记录并入库；检索面板和 Agent 推荐共用。"""
+    fname = f"{r['id']}.pdf"
+    if any(p.file == fname for p in st.session_state.get("pages") or []):
+        st.info(f"{fname} 已经在文献库里了。")
+        return
+    try:
+        with st.spinner(f"正在下载 {fname} …"):
+            pdf = download_arxiv_pdf(r["pdf_url"])
+            new_pages, _ = extract_pages(pdf, fname)
+    except Exception as exc:
+        st.error(f"下载失败：{exc}")
+        return
+    if not new_pages:
+        st.warning("这篇没读到文字，可能是扫描版；当前版本不解析扫描件。")
+        return
+    add_to_library(new_pages, fname, pdf)
+    record_history(r)
+    st.success(f"已加入 {fname}（{len(new_pages)} 页），索引已重建。")
+    st.rerun()
+
+
 def render_arxiv():
     """模块四：调用 arXiv 公开 API 检索并入库（工具调用入口）。"""
     st.caption(
@@ -132,22 +156,57 @@ def render_arxiv():
                 st.caption("摘要里没有 GitHub 链接，复现性需要人工确认。")
 
             if st.button("下载并加入文献库", key=f"arxiv_add_{r['id']}"):
-                fname = f"{r['id']}.pdf"
-                try:
-                    with st.spinner(f"正在下载 {fname} …"):
-                        pdf = download_arxiv_pdf(r["pdf_url"])
-                        new_pages, _ = extract_pages(pdf, fname)
-                except Exception as exc:
-                    st.error(f"下载失败：{exc}")
-                else:
-                    if not new_pages:
-                        st.warning("这篇没读到文字，可能是扫描版；当前版本不解析扫描件。")
-                    elif any(p.file == fname for p in st.session_state.get("pages") or []):
-                        st.info(f"{fname} 已经在文献库里了。")
-                    else:
-                        add_to_library(new_pages, fname, pdf)
-                        st.success(f"已加入 {fname}（{len(new_pages)} 页），索引已重建。")
-                        st.rerun()
+                _add_arxiv_item(r)
+
+    hist = load_history(5)
+    if hist:
+        st.divider()
+        with st.expander(f"最近使用（{len(hist)}/5 条）", expanded=False):
+            for h in hist:
+                c1, c2 = st.columns([5, 1])
+                c1.markdown(f"**{h['id']}** · {h['title'][:60]}")
+                c1.caption(f"使用时间：{h.get('used_at', '—')}　"
+                           f"https://arxiv.org/abs/{h['id']}")
+                if h.get("pdf_url") and c2.button("再次入库", key=f"hist_{h['id']}"):
+                    _add_arxiv_item(h)
+            st.caption("只保留最近 5 条；同一篇重复使用只留最新一次。")
+
+
+def render_agent(chunks):
+    """轻量 Agent：自己决定查什么、查完怎么筛，并把过程摊开给评委看。"""
+    st.caption(
+        "不用你输关键词：Agent 先读库里论文、抽主题词，再自己调 arXiv 检索、"
+        "剔除已在库和主题不相关的条目，最后按命中度推荐。每一步都会显示出来。"
+    )
+    if st.button("让 Agent 自己找相关论文", key="agent_go"):
+        with st.spinner("Agent 正在规划…"):
+            try:
+                plan = plan_related(chunks, max_results=10, limit=5)
+            except Exception as exc:
+                st.error(f"规划失败：{exc}")
+                plan = None
+        if plan:
+            st.session_state["agent_plan"] = plan
+
+    plan = st.session_state.get("agent_plan")
+    if not plan:
+        return
+
+    st.markdown("**规划过程**")
+    for i, step in enumerate(plan["steps"], start=1):
+        st.markdown(f"{i}. {step}")
+    if plan.get("terms"):
+        st.caption("主题词：" + "、".join(plan["terms"]))
+
+    for it in plan.get("items", []):
+        with st.expander(f"{it['id']} · {it['title'][:70]}"):
+            st.markdown(f"**推荐理由**：标题/摘要命中 {'、'.join(it['hits'])}")
+            st.caption(f"{it['authors'] or '—'}　{it['published']}")
+            st.write(it["summary"][:600])
+            if it.get("github"):
+                st.success(f"开源：{it['github']}")
+            if st.button("下载并加入文献库", key=f"agent_add_{it['id']}"):
+                _add_arxiv_item(it)
 
 
 def render_check(report):
@@ -313,6 +372,19 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
             )
 
 
+def zoomable_image(png_bytes, zoom: int, height: int = 760):
+    """把页面图塞进一个可滚动容器，滑杆改宽度即可放大看细节。"""
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+    html = (
+        f'<div style="height:{height}px;overflow:auto;border:1px solid #E3DCCB;'
+        f'border-radius:10px;background:#fff;padding:8px">'
+        f'<img src="data:image/png;base64,{b64}" '
+        f'style="width:{zoom}%;display:block;margin:0 auto;max-width:none">'
+        f"</div>"
+    )
+    components.html(html, height=height + 16, scrolling=False)
+
+
 def render_reader(api_key, pages):
     """模块三：左原文版式、右译文的按页联动阅读。"""
     st.subheader("阅读器：左侧原版式，右侧译文（按页联动）")
@@ -352,9 +424,13 @@ def render_reader(api_key, pages):
 
     left, right = st.columns([1, 1])
     with left:
-        png = render_page_png((st.session_state.get("pdf_bytes") or {}).get(file), page)
+        zoom = st.slider("缩放（%）", 60, 240, 100, step=10, key="reader_zoom",
+                         help="放大后可以在框内拖动滚动条查看；PDF 会按缩放重新渲染，字不会糊。")
+        raw = (st.session_state.get("pdf_bytes") or {}).get(file)
+        png = render_page_png(raw, page, dpi=min(110 + int(zoom * 0.9), 320))
         if png:
-            st.image(png, caption=f"{file} · 第 {page} 页（原版式）", use_container_width=True)
+            zoomable_image(png, zoom, height=760)
+            st.caption(f"{file} · 第 {page} 页（原版式，{zoom}%）")
         else:
             st.info("这一页没有原始 PDF 图像。重新建立索引后会保存原始文件；"
                     "新上传或从 arXiv 入库的论文都有图。")
@@ -559,6 +635,10 @@ if build:
 
 with st.expander("arXiv 检索入库（工具调用）", expanded=False):
     render_arxiv()
+
+if st.session_state.get("chunks"):
+    with st.expander("Agent 规划：相关论文推荐", expanded=False):
+        render_agent(st.session_state["chunks"])
 
 if "stats" in st.session_state:
     stats = st.session_state["stats"]
