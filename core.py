@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """TestPaper Copilot 保命版：PDF 读取、切块、检索、带页码回答。"""
 
 from dataclasses import dataclass
@@ -220,6 +220,30 @@ def expand_hits(hits, chunks, max_pages: int = 3, max_chunks: int = 12):
             if len(out) >= max_chunks:
                 return out
     return out
+
+
+def _clean_terms(text: str, limit: int = 200) -> str:
+    words = re.findall(r"[A-Za-z][A-Za-z0-9_\-]{1,}", text or "")
+    return " ".join(dict.fromkeys(w.lower() for w in words))[:limit]
+
+
+def rewrite_query(api_key: str, question: str, model: str = "deepseek-chat") -> str:
+    """让模型把中文问题改写成英文检索词——解决“数据集/指标”对不上英文原文。
+
+    只影响检索，不影响回答语言；失败时返回空串，调用方退回原问题。
+    """
+    if not api_key:
+        return ""
+    system = (
+        "你是学术检索助手。把用户的问题改写成 3-6 个英文检索词，"
+        "覆盖同义术语、领域惯用词与常见缩写；只输出检索词，用空格分隔，"
+        "不要编号、不要解释、不要句子。"
+    )
+    try:
+        raw = _chat(api_key, system, question, model=model, temperature=0, max_tokens=80)
+    except Exception:
+        return ""
+    return _clean_terms(raw)
 
 
 SPLIT = re.compile(r"以及|[和与及、；;]")

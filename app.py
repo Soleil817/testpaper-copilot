@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """查找小助手：面向软件测试论文的证据型阅读助手。"""
 
 import os
@@ -12,7 +12,7 @@ from core import (
     ask_deepseek_stream, translate_text, write_discussion, extract_references,
     verify_answer, find_duplicate_groups, diff_versions, format_diff, expand_hits,
     arxiv_search, download_arxiv_pdf, render_page_png, search_multi, plan_related,
-    load_history, record_history, with_first_page,
+    load_history, record_history, with_first_page, rewrite_query,
 )
 from graph_utils import build_citation_svg
 
@@ -289,8 +289,18 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
             st.warning("左侧先填 DeepSeek API Key。")
         else:
             k = max(top_k, 10) if compare else top_k
-            hits_raw, top_score = search_multi(question, scoped, top_k=k, mode=retrieval,
-                                         per_file=2 if compare else 0)
+            cache = st.session_state.get("rewrite_cache")
+            if cache is None:
+                cache = {}
+                st.session_state["rewrite_cache"] = cache
+            if question not in cache:
+                with st.spinner("正在把问题改写成英文检索词…"):
+                    cache[question] = rewrite_query(api_key, question)
+            terms = cache.get(question, "")
+            search_q = f"{question} {terms}".strip() if terms else question
+
+            hits_raw, top_score = search_multi(search_q, scoped, top_k=k, mode=retrieval,
+                                               per_file=2 if compare else 0)
             hits_raw = with_first_page(question, scoped, hits_raw)
             hits = expand_hits(hits_raw, scoped) if hits_raw else []
             if not hits or top_score < 0.05:
@@ -300,10 +310,13 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
                     "当前资料中没有找到足够证据。\n\n"
                     "可以换一种问法，或者确认论文里真的写了这个信息。"
                 )
+                if terms:
+                    st.caption(f"本次检索词：{terms}")
             else:
                 st.markdown("### 回答")
-                st.caption(f"检索到 {len(hits_raw)} 段原文（已扩展为整页 {len(hits)} 段），"
-                           "正在流式生成并逐条校验…")
+                st.caption(f"检索到 {len(hits_raw)} 段原文（已扩展为整页 {len(hits)} 段）"
+                           + (f"　检索词：{terms}" if terms else "")
+                           + "，正在流式生成并逐条校验…")
                 try:
                     answer = st.write_stream(
                         ask_deepseek_stream(api_key, question, hits, compare=compare)
