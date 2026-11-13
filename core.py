@@ -182,6 +182,21 @@ def _bm25_scores(q_tokens, chunks, k1: float = 1.5, b: float = 0.75):
     return out
 
 
+GENERIC_MARKERS = ("核心问题", "解决什么问题", "研究的是什么", "研究什么", "主要结论",
+                   "贡献", "motivation", "研究任务")
+
+
+def with_first_page(question: str, chunks, hits):
+    """问题类提问强制带上第 1 页（摘要/引言），否则摘要页常被实现页挤掉。"""
+    if not any(m in (question or "") for m in GENERIC_MARKERS):
+        return hits
+    firsts = [c for c in chunks if c.page == 1]
+    if not firsts:
+        return hits
+    seen = {(c.file, c.page, c.text[:40]) for c in firsts}
+    return firsts + [h for h in hits if (h.file, h.page, h.text[:40]) not in seen]
+
+
 def expand_hits(hits, chunks, max_pages: int = 3, max_chunks: int = 12):
     """把命中的原文段扩成整页：同一页的其他段也带上。
 
