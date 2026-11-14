@@ -175,10 +175,6 @@ def render_arxiv():
 
 def render_agent(chunks):
     """轻量 Agent：自己决定查什么、查完怎么筛，并把过程摊开给评委看。"""
-    st.caption(
-        "不用你输关键词：Agent 先读库里论文、抽主题词，再自己调 arXiv 检索、"
-        "剔除已在库和主题不相关的条目，最后按命中度推荐。每一步都会显示出来。"
-    )
     if st.button("让 Agent 自己找相关论文", key="agent_go"):
         with st.spinner("Agent 正在规划…"):
             try:
@@ -443,10 +439,6 @@ def zoomable_image(png_bytes, zoom: int, height: int = 760):
 def render_reader(api_key, pages):
     """模块三：左原文版式、右译文的按页联动阅读。"""
     st.subheader("阅读器：左侧原版式，右侧译文（按页联动）")
-    st.caption(
-        "左栏是 PDF 原页渲染，排版/公式/表格保持原样；右栏按页给译文。翻页两边同步，"
-        "从问答的引用也能直接定位过来。"
-    )
 
     if not pages:
         st.info("先上传论文并建立索引。")
@@ -615,11 +607,10 @@ with st.sidebar:
         st.success("已清空，请重新上传论文。")
     st.divider()
     st.caption("Key 不会写进代码；不要把 Key 提交到 GitHub。")
-    st.caption("build 2026-11-12 · multi-query")
+
 
 # ---------------- header ----------------
 st.title("查找小助手")
-st.caption("面向软件测试论文的证据型阅读助手 · 问答 / 引用校验 / 双栏阅读 / 引用图谱 / 写论述")
 st.info(
     "上传 1–5 篇**文字版** PDF，先建索引；然后可以用：**问答（带页码）、引用校验、"
     "双栏阅读（左原文右译文）、引用图谱、写论述**；首页还能从 arXiv 直接检索入库。"
@@ -633,12 +624,7 @@ files = st.file_uploader(
     help="扫描件 PDF 暂时读不出文字；先用文字版论文做 Demo。",
 )
 
-col_a, col_b = st.columns([1, 2])
-with col_a:
-    build = st.button("建立索引", type="primary", use_container_width=True)
-with col_b:
-    st.caption("建议每篇 5–30 页；第一次读 3 篇大约 10–60 秒。")
-
+build = st.button("建立索引", type="primary")
 if build:
     if not files:
         st.warning("先上传至少 1 篇 PDF。")
