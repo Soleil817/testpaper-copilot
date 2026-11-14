@@ -479,13 +479,11 @@ def render_reader(api_key, pages):
 
     left, right = st.columns([1, 1])
     with left:
-        zoom = st.slider("缩放（%）", 60, 240, 100, step=10, key="reader_zoom",
-                         help="放大后可以在框内拖动滚动条查看；PDF 会按缩放重新渲染，字不会糊。")
         raw = (st.session_state.get("pdf_bytes") or {}).get(file)
-        png = render_page_png(raw, page, dpi=min(110 + int(zoom * 0.9), 320))
+        png = render_page_png(raw, page, dpi=180)
         if png:
-            zoomable_image(png, zoom, height=760)
-            st.caption(f"{file} · 第 {page} 页（原版式，{zoom}%）")
+            zoomable_image(png, 100, height=760)
+            st.caption(f"{file} · 第 {page} 页（原版式；滚轮缩放、按住拖动）")
         else:
             st.info("这一页没有原始 PDF 图像。重新建立索引后会保存原始文件；"
                     "新上传或从 arXiv 入库的论文都有图。")

@@ -853,12 +853,20 @@ def arxiv_search(query: str, max_results: int = 5, timeout: int = 45, retries: i
         params["sortBy"] = "relevance"
 
     last_err = None
+    headers = {"User-Agent": "TestPaperCopilot/1.0 (educational demo; contact: student)"}
     for attempt in range(retries):
         try:
             resp = requests.get("https://export.arxiv.org/api/query", params=params,
-                                timeout=(10, timeout))
+                                headers=headers, timeout=(10, timeout))
             if resp.status_code == 429:
                 raise RuntimeError("arXiv 限流（HTTP 429），等 30 秒再试")
+            if resp.status_code == 400:
+                # 云端 IP 偶尔被拒：退回只查第一个词，保证 Agent 还能出结果
+                first = re.split(r"[\s:]+", q)[0] if "all:" not in q else "test"
+                params["search_query"] = f'all:"{first}"'
+                params.pop("id_list", None)
+                resp = requests.get("https://export.arxiv.org/api/query", params=params,
+                                    headers=headers, timeout=(10, timeout))
             if resp.status_code != 200:
                 raise RuntimeError(f"arXiv 返回 HTTP {resp.status_code}")
             items = parse_arxiv_feed(resp.text)
@@ -876,7 +884,7 @@ def download_arxiv_pdf(pdf_url: str, timeout: int = 40) -> bytes:
 
     if not pdf_url:
         raise ValueError("这条记录没有 PDF 链接。")
-    resp = requests.get(pdf_url, timeout=timeout)
+    resp = requests.get(pdf_url, timeout=timeout, headers={"User-Agent": "TestPaperCopilot/1.0"})
     if resp.status_code != 200:
         raise RuntimeError(f"下载失败：HTTP {resp.status_code}")
     return resp.content
@@ -970,9 +978,9 @@ def plan_related(chunks, max_results: int = 10, limit: int = 5):
 
     top = terms[:3]
     if len(top) >= 2:
-        query = f"all:{top[0]} AND all:{top[1]}"
+        query = f'all:"{top[0]}" AND all:"{top[1]}"'
     else:
-        query = f"all:{top[0]}"
+        query = f'all:"{top[0]}"'
 
     steps = [
         f"读取库内论文，统计高频术语，选出：{'、'.join(top)}",
