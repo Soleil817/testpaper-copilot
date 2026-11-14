@@ -211,6 +211,23 @@ def with_first_page(question: str, chunks, hits):
     return firsts + [h for h in hits if (h.file, h.page, h.text[:40]) not in seen]
 
 
+def expand_compare(hits, chunks, max_files: int = 4, max_chunks: int = 16):
+    """对比模式专用：每篇论文只展开它最相关的那一页，保证每篇都进上下文。"""
+    files = []
+    for h in hits:
+        if h.file not in files:
+            files.append(h.file)
+    out = []
+    for f in files[:max_files]:
+        page = next(h.page for h in hits if h.file == f)
+        for c in chunks:
+            if c.file == f and c.page == page:
+                out.append(c)
+                if len(out) >= max_chunks:
+                    return out
+    return out
+
+
 def expand_hits(hits, chunks, max_pages: int = 3, max_chunks: int = 12):
     """把命中的原文段扩成整页：同一页的其他段也带上。
 
