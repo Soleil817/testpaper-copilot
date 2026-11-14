@@ -393,16 +393,51 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
 
 
 def zoomable_image(png_bytes, zoom: int, height: int = 760):
-    """把页面图塞进一个可滚动容器，滑杆改宽度即可放大看细节。"""
+    """页面图容器：滚轮缩放、按住拖动平移；滑杆作为备用入口。"""
     b64 = base64.b64encode(png_bytes).decode("ascii")
-    html = (
-        f'<div style="height:{height}px;overflow:auto;border:1px solid #E3DCCB;'
-        f'border-radius:10px;background:#fff;padding:8px">'
-        f'<img src="data:image/png;base64,{b64}" '
-        f'style="width:{zoom}%;display:block;margin:0 auto;max-width:none">'
-        f"</div>"
-    )
-    components.html(html, height=height + 16, scrolling=False)
+    html = f"""
+<div style="font-family: sans-serif">
+  <div id="wrap" style="height:{height}px;overflow:auto;border:1px solid #E3DCCB;
+       border-radius:10px;background:#fff;padding:8px;cursor:grab">
+    <img id="pg" src="data:image/png;base64,{b64}"
+         style="width:{zoom}%;display:block;margin:0 auto;max-width:none">
+  </div>
+  <div style="font-size:12px;color:#6F7C76;margin-top:6px">
+    滚轮缩放　·　按住拖动平移　·　当前 <span id="pct">{zoom}</span>%
+  </div>
+</div>
+<script>
+  const wrap = document.getElementById('wrap');
+  const pg = document.getElementById('pg');
+  const pct = document.getElementById('pct');
+  let scale = {zoom};
+  let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+  wrap.addEventListener('wheel', function (e) {{
+    e.preventDefault();
+    scale = Math.min(400, Math.max(40, scale + (e.deltaY < 0 ? 10 : -10)));
+    pg.style.width = scale + '%';
+    pct.textContent = Math.round(scale);
+  }}, {{ passive: false }});
+
+  wrap.addEventListener('mousedown', function (e) {{
+    dragging = true;
+    startX = e.clientX; startY = e.clientY;
+    startLeft = wrap.scrollLeft; startTop = wrap.scrollTop;
+    wrap.style.cursor = 'grabbing';
+  }});
+  window.addEventListener('mouseup', function () {{
+    dragging = false;
+    wrap.style.cursor = 'grab';
+  }});
+  wrap.addEventListener('mousemove', function (e) {{
+    if (!dragging) return;
+    wrap.scrollLeft = startLeft - (e.clientX - startX);
+    wrap.scrollTop = startTop - (e.clientY - startY);
+  }});
+</script>
+"""
+    components.html(html, height=height + 40, scrolling=False)
 
 
 def render_reader(api_key, pages):

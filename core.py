@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """TestPaper Copilot 保命版：PDF 读取、切块、检索、带页码回答。"""
 
 from dataclasses import dataclass
@@ -499,8 +499,15 @@ def best_evidence(claim: str, page_text: str) -> str:
 
 
 def is_refusal(answer: str) -> bool:
-    head = (answer or "")[:300]
-    return not CITE.search(head) and any(m in head for m in REFUSAL_MARKS)
+    """只看开头 40 字：拒答一定是“开场就承认没证据”。
+
+    不能用“未报告”这种词判断——对比表格的单元格里到处都是“未报告”，
+    会把正常回答误判成拒答（实测把误拒率抬高到 62%）。
+    """
+    head = (answer or "")[:40]
+    openers = ("没有足够证据", "没有找到", "资料中没有", "资料未", "无法回答",
+               "无法判断", "不足以", "资料不足")
+    return any(m in head for m in openers)
 
 
 def verify_answer(answer: str, chunks, threshold: float = 0.30):
