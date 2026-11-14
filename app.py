@@ -123,10 +123,6 @@ def _add_arxiv_item(r, key_prefix="arxiv"):
 
 def render_arxiv():
     """模块四：调用 arXiv 公开 API 检索并入库（工具调用入口）。"""
-    st.caption(
-        "调用 arXiv 公开 API 检索论文，直接下载 PDF 入库；摘要/备注里出现 GitHub 链接会标出来"
-        "（复现性提示）。这一块对应赛题模块四，也是“Agent 调工具”的最小演示。"
-    )
     c1, c2 = st.columns([3, 1])
     query = c1.text_input(
         "关键词 / arXiv ID", key="arxiv_q",
@@ -252,7 +248,6 @@ def render_check(report):
 
 def render_qa(api_key, chunks, top_k, compare, retrieval):
     st.subheader("论文问答")
-    st.caption("只根据上传的论文回答；每句结论都要标 [文件名 第X页]；没证据就拒答。")
 
     files = sorted({c.file for c in chunks})
     scope = st.selectbox(
@@ -611,11 +606,6 @@ with st.sidebar:
 
 # ---------------- header ----------------
 st.title("查找小助手")
-st.info(
-    "上传 1–5 篇**文字版** PDF，先建索引；然后可以用：**问答（带页码）、引用校验、"
-    "双栏阅读（左原文右译文）、引用图谱、写论述**；首页还能从 arXiv 直接检索入库。"
-    "扫描件暂不支持 OCR。"
-)
 
 files = st.file_uploader(
     "上传 PDF（建议 1–5 篇文字版论文）",
@@ -769,8 +759,6 @@ if "chunks" in st.session_state:
         render_graph(pages)
     with tabs[3]:
         render_writing(api_key, chunks)
-else:
-    st.info("先上传论文并点“建立索引”，四个功能会解锁。")
 
 st.divider()
 st.caption(
