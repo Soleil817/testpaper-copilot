@@ -323,17 +323,25 @@ def search(question: str, chunks, top_k: int = 6, mode: str = "hybrid",
 
     hits = []
     if per_file and per_file > 0:
-        taken = {}
+        # 按文件轮流取：第 1 篇 top1、第 2 篇 top1……再取第 2 轮。
+        # 否则排序靠前那篇会把位置占满，后面的论文根本进不了上下文。
+        taken, order, by_file = {}, [], {}
         for i in ranked:
-            c = chunks[i]
-            if taken.get(c.file, 0) >= per_file:
-                continue
             if coverage[i] <= 0:
                 continue
-            hits.append(c)
-            taken[c.file] = taken.get(c.file, 0) + 1
-            if len(hits) >= top_k:
+            by_file.setdefault(chunks[i].file, []).append(i)
+        depth = max((len(v) for v in by_file.values()), default=0)
+        for round_idx in range(depth):
+            for f, idxs in by_file.items():
+                if round_idx >= len(idxs) or taken.get(f, 0) >= per_file:
+                    continue
+                order.append(idxs[round_idx])
+                taken[f] = taken.get(f, 0) + 1
+                if len(order) >= top_k:
+                    break
+            if len(order) >= top_k:
                 break
+        hits = [chunks[i] for i in order]
     else:
         hits = [chunks[i] for i in ranked[:top_k] if coverage[i] > 0]
 

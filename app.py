@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """查找小助手：面向软件测试论文的证据型阅读助手。"""
 
 import os
@@ -302,7 +302,7 @@ def render_qa(api_key, chunks, top_k, compare, retrieval):
             hits_raw, top_score = search_multi(search_q, scoped, top_k=k, mode=retrieval,
                                                per_file=2 if compare else 0)
             hits_raw = with_first_page(question, scoped, hits_raw)
-            hits = expand_hits(hits_raw, scoped) if hits_raw else []
+            hits = expand_hits(hits_raw, scoped, max_pages=4 if compare else 3) if hits_raw else []
             if not hits or top_score < 0.05:
                 st.session_state["qa_result"] = None
                 _log_qa(question, "", [], refused=True, top_score=top_score)
