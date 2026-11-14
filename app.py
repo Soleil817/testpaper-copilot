@@ -2,6 +2,7 @@
 """查找小助手：面向软件测试论文的证据型阅读助手。"""
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 import base64
 import json
 import streamlit as st
@@ -42,6 +43,67 @@ def default_key():
     except Exception:
         secret_key = ""
     return str(secret_key or os.getenv("DEEPSEEK_API_KEY", ""))
+
+
+SAMPLE_PAPERS = [
+    ("2305.04764v2", "ChatUniTest"),
+    ("2501.11086v2", "LLM 修测试"),
+    ("1202.4527v1", "GUI 测试综述"),
+    ("2406.04373v1", "VerilogReader"),
+]
+
+
+def _set_index(all_pages, pdf_map, empty_pages, n_files):
+    """把解析结果写进会话状态，返回原文段数。上传和示例下载共用。"""
+    chunks = chunk_pages(all_pages)
+    st.session_state["chunks"] = chunks
+    st.session_state["pages"] = all_pages
+    st.session_state["archive_pages"] = all_pages
+    st.session_state["pdf_bytes"] = pdf_map
+    st.session_state["stats"] = {"files": n_files, "pages": len(all_pages),
+                                 "chunks": len(chunks), "empty": empty_pages}
+    by_file = {}
+    for pg in all_pages:
+        by_file.setdefault(pg.file, []).append(pg)
+    st.session_state["dup_groups"] = find_duplicate_groups(by_file)
+    st.session_state.pop("diff_report", None)
+    for k in ("qa_result", "trans_result", "graph_refs", "write_result"):
+        st.session_state.pop(k, None)
+    return len(chunks)
+
+
+def load_sample_papers():
+    """评委点一下就能用：直接从 arXiv 拉这 4 篇，省掉找 PDF 和上传。"""
+    all_pages, pdf_map, empty_pages, failed = [], {}, 0, []
+    progress = st.progress(0.0, text="正在从 arXiv 并发下载 4 篇示例论文…")
+
+    def _fetch(item):
+        pid, title = item
+        try:
+            raw = download_arxiv_pdf(f"https://arxiv.org/pdf/{pid}", timeout=45)
+            pages, empty = extract_pages(raw, f"{pid}.pdf")
+            return pid, raw, pages, empty, None
+        except Exception as exc:
+            return pid, None, [], 0, f"{pid}: {exc}"
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for i, (pid, raw, pages, empty, err) in enumerate(pool.map(_fetch, SAMPLE_PAPERS)):
+            if err:
+                failed.append(err)
+            else:
+                all_pages.extend(pages)
+                empty_pages += empty
+                pdf_map[f"{pid}.pdf"] = raw
+            progress.progress((i + 1) / len(SAMPLE_PAPERS),
+                              text=f"已完成 {i + 1}/{len(SAMPLE_PAPERS)}")
+    progress.empty()
+    if not all_pages:
+        st.error("示例论文没下载下来（可能是网络或 arXiv 限流），请手动上传 PDF。")
+        return
+    n_chunks = _set_index(all_pages, pdf_map, empty_pages, len(pdf_map))
+    st.success(f"已载入 {len(pdf_map)} 篇示例论文、{len(all_pages)} 页、{n_chunks} 个原文段，可以直接提问。")
+    if failed:
+        st.warning("有下载失败：" + "；".join(failed))
 
 
 def clear_all():
@@ -578,6 +640,17 @@ def render_writing(api_key, chunks):
 # ---------------- sidebar ----------------
 with st.sidebar:
     st.header("设置")
+    with st.expander("评测成绩（30 题，可复现）", expanded=False):
+        st.markdown(
+            "| 指标 | 结果 |\n|---|---|\n"
+            "| 答案正确率 | 26/30（86.7%） |\n"
+            "| 拒答正确率 | 7/7 |\n"
+            "| 引用通过率 | 93.2%（69/74） |\n"
+            "| 平均支撑度 | 0.85 |\n"
+            "| 检索命中率 | 17/19 |\n"
+        )
+        st.caption("题目、日志与计分脚本在提交包 03_评测材料，可一键复算。")
+
     api_key = st.text_input(
         "DeepSeek API Key",
         value=default_key(),
@@ -614,6 +687,9 @@ files = st.file_uploader(
     help="扫描件 PDF 暂时读不出文字；先用文字版论文做 Demo。",
 )
 
+if st.button("载入 4 篇示例论文（自动从 arXiv 下载）"):
+    load_sample_papers()
+
 build = st.button("建立索引", type="primary")
 if build:
     if not files:
@@ -640,26 +716,9 @@ if build:
         if not all_pages:
             st.error("没有读到任何文字。请换文字版 PDF，或确认文件没有加密。")
         else:
-            chunks = chunk_pages(all_pages)
-            st.session_state["chunks"] = chunks
-            st.session_state["pages"] = all_pages
-            st.session_state["archive_pages"] = all_pages
-            st.session_state["pdf_bytes"] = pdf_map
-            st.session_state["stats"] = {
-                "files": len(files),
-                "pages": len(all_pages),
-                "chunks": len(chunks),
-                "empty": empty_pages,
-            }
-            by_file = {}
-            for p in all_pages:
-                by_file.setdefault(p.file, []).append(p)
-            st.session_state["dup_groups"] = find_duplicate_groups(by_file)
-            st.session_state.pop("diff_report", None)
-            for k in ("qa_result", "trans_result", "graph_refs", "write_result"):
-                st.session_state.pop(k, None)
+            n_chunks = _set_index(all_pages, pdf_map, empty_pages, len(files))
             st.success(
-                f"索引完成：{len(files)} 篇论文，{len(all_pages)} 页，{len(chunks)} 个原文段。"
+                f"索引完成：{len(files)} 篇论文，{len(all_pages)} 页，{n_chunks} 个原文段。"
             )
 
 with st.expander("arXiv 检索入库（工具调用）", expanded=False):
