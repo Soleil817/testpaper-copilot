@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """TestPaper Copilot 保命版：PDF 读取、切块、检索、带页码回答。"""
 
 from dataclasses import dataclass
@@ -184,6 +184,20 @@ def _bm25_scores(q_tokens, chunks, k1: float = 1.5, b: float = 0.75):
 
 GENERIC_MARKERS = ("核心问题", "解决什么问题", "研究的是什么", "研究什么", "主要结论",
                    "贡献", "motivation", "研究任务")
+
+
+def ensure_all_files(hits, chunks):
+    """对比模式：没命中的论文补第 1 页，保证每篇都有代表。
+
+    否则检索分 0 的论文会被整篇丢掉，模型只能对比其中一两篇。
+    """
+    have = {h.file for h in hits}
+    extra = []
+    for c in chunks:
+        if c.file not in have and c.page == 1:
+            extra.append(c)
+            have.add(c.file)
+    return list(hits) + extra
 
 
 def with_first_page(question: str, chunks, hits):
