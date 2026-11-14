@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """TestPaper Copilot 保命版：PDF 读取、切块、检索、带页码回答。"""
 
 from dataclasses import dataclass
@@ -396,7 +396,8 @@ def build_prompt(question: str, chunks, compare: bool = False):
         system += (
             " 如果用户要求对比，请输出 Markdown 表格，列为：论文、数据集、指标、"
             "主要结论、局限；每个单元格末尾也要标 [文件名 第X页]；"
-            "论文没写的写“未报告”，不要编造。"
+            "资料里出现的每一篇论文都必须单独占一行，某篇没有某列的信息就写“未报告”，"
+            "绝对不能因为信息少就省略这篇；不要编造。"
         )
 
     user = f"资料：\n{context}\n\n问题：{question}\n\n请回答，并标注页码。"
